@@ -53,6 +53,7 @@ export class FlipDown {
     this.active = false;
     this.state = "";
     this.headerShift = false;
+    this.lastDisplayMode = null;
     this.delimeterBlink = null;
     this.delimeterIsBlinking = false;
     // Time at instantiation in seconds
@@ -199,6 +200,7 @@ export class FlipDown {
       theme: opt.hasOwnProperty("theme") && opt.theme ? opt.theme : "hass",
       showHeader: opt.hasOwnProperty("show_header") && opt.show_header ? opt.show_header : false,
       showHour: opt.hasOwnProperty("show_hour") && opt.show_hour ? opt.show_hour : false,
+      showDay: opt.hasOwnProperty("show_day") && opt.show_day ? opt.show_day : false,
       btLocation: opt.bt_location,
       headings,
     };
@@ -235,20 +237,32 @@ export class FlipDown {
 
     // Create and store rotors
 
+    // Determine if we need day rotors
+    const dayRotorCount = (this.opts.showDay && this.opts.showDay !== false) ? 2 : 0;
+    const totalRotorCount = dayRotorCount + 6;
 
-    // Create day rotor group
-    // var dayRotors = [];
-    // for (var i = 0; i < dayRotorCount; i++) {
-    //   dayRotors.push(this.rotors[i]);
-    // }
-    // this.element.appendChild(this._createRotorGroup(dayRotors, 0));
-
-    // Create other rotor groups
-    const dayRotorCount = 0;
-    for (let i = 0; i < dayRotorCount + 6; i++) {
+    for (let i = 0; i < totalRotorCount; i++) {
       this.rotors.push(this._createRotor(0));
     }
-    let count = dayRotorCount;
+
+    let count = 0;
+    let groupIndex = 0;
+
+    // Create day rotor group if needed
+    if (dayRotorCount > 0) {
+      const dayRotors = [];
+      for (let j = 0; j < 2; j++) {
+        this.rotors[count].setAttribute("id", "d" + (1 - j))
+        dayRotors.push(this.rotors[count]);
+        count++;
+      }
+      const rg = this._createRotorGroup(dayRotors, groupIndex);
+      this.rotorGroups.push(rg);
+      this.element.appendChild(rg);
+      groupIndex++;
+    }
+
+    // Create other rotor groups (hours, minutes, seconds)
     for (let i = 0; i < 3; i++) {
       const otherRotors = [];
       for (let j = 0; j < 2; j++) {
@@ -256,9 +270,10 @@ export class FlipDown {
         otherRotors.push(this.rotors[count]);
         count++;
       }
-      const rg = this._createRotorGroup(otherRotors, i + 1);
+      const rg = this._createRotorGroup(otherRotors, groupIndex);
       this.rotorGroups.push(rg);
       this.element.appendChild(rg);
+      groupIndex++;
     }
     this.element.appendChild(this._createButton());
 
@@ -292,11 +307,25 @@ export class FlipDown {
   _createRotorGroup(rotors, rotorIndex) {
     const rotorGroup = document.createElement("div");
     rotorGroup.className = "rotor-group";
-    if ((!this.opts.showHour || this.opts.showHour == 'auto') && rotorIndex == 1) rotorGroup.className += " hide";
+
+    // Handle day visibility
+    if ((!this.opts.showDay || this.opts.showDay == 'auto') && rotorIndex == 0) {
+      rotorGroup.className += " hide";
+    }
+    if (this.opts.showDay == 'auto' && this.state == 'idle') {
+      rotorGroup.className += " autoday";
+      this.headerShift = true;
+    }
+
+    // Handle hour visibility
+    if ((!this.opts.showHour || this.opts.showHour == 'auto') && rotorIndex == 1) {
+      rotorGroup.className += " hide";
+    }
     if (this.opts.showHour == 'auto' && this.state == 'idle') {
       rotorGroup.className += " autohour";
       this.headerShift = true;
     }
+
     rotorGroup.setAttribute("id", this.opts.headings[rotorIndex]);
     const dayRotorGroupHeading = document.createElement("div");
     dayRotorGroupHeading.className = "rotor-group-heading";
@@ -435,9 +464,12 @@ export class FlipDown {
     if (this.rt != null) diff = this.rt;
 
     // Days remaining
-    //this.clockValues.d = Math.floor(diff / 86400);
-    //diff -= this.clockValues.d * 86400;
-    this.clockValues.d = 0;
+    if (this.opts.showDay && this.opts.showDay !== false) {
+      this.clockValues.d = Math.floor(diff / 86400);
+      diff -= this.clockValues.d * 86400;
+    } else {
+      this.clockValues.d = 0;
+    }
 
     // Hours remaining
     this.clockValues.h = Math.floor(diff / 3600);
@@ -471,13 +503,32 @@ export class FlipDown {
     this.clockStrings.m = pad(this.clockValues.m, 2);
     this.clockStrings.s = pad(this.clockValues.s, 2);
 
-    // Concat clock value strings
-    if (this.opts.showHour == 'auto' && ((this.clockValues.h > 0) || this.state == 'idle')) {
-      if (!this.headerShift) {
-        this.rotorGroups.forEach((el) =>
-          el.classList.add("autohour")
-        );
+    // Determine what to display based on auto logic
+    let displayMode = 'hms'; // default: hours, minutes, seconds
+
+    // Check if we should show days (auto logic)
+    if (this.opts.showDay == 'auto' && ((this.clockValues.d > 0) || this.state == 'idle')) {
+      displayMode = 'dh'; // days and hours
+    } else if (this.opts.showDay === true) {
+      displayMode = 'dh'; // days and hours (always)
+    } else if (this.opts.showHour == 'auto' && ((this.clockValues.h > 0) || this.state == 'idle')) {
+      displayMode = 'hm'; // hours and minutes
+    } else if (this.opts.showHour === true) {
+      displayMode = 'hm'; // hours and minutes (always)
+    } else {
+      displayMode = 'hms'; // hours, minutes, seconds
+    }
+
+    // Apply the display mode
+    if (displayMode == 'dh') {
+      // Show days and hours
+      if (!this.headerShift || this.lastDisplayMode !== 'dh') {
+        this.rotorGroups.forEach((el) => {
+          el.classList.remove("autohour");
+          el.classList.add("autoday");
+        });
         this.headerShift = true;
+        this.lastDisplayMode = 'dh';
       }
       if (this.state == 'active' && !this.delimeterIsBlinking) {
         this.delimeterBlink.classList.add("blink");
@@ -487,22 +538,49 @@ export class FlipDown {
         this.delimeterIsBlinking = false;
       }
       this.clockValuesAsString = (
-        "00" +
+        this.clockStrings.d +
         this.clockStrings.h +
-        this.clockStrings.m
+        "0000"
+      ).split("");
+    } else if (displayMode == 'hm') {
+      // Show hours and minutes
+      if (!this.headerShift || this.lastDisplayMode !== 'hm') {
+        this.rotorGroups.forEach((el) => {
+          el.classList.remove("autoday");
+          el.classList.add("autohour");
+        });
+        this.headerShift = true;
+        this.lastDisplayMode = 'hm';
+      }
+      if (this.state == 'active' && !this.delimeterIsBlinking) {
+        this.delimeterBlink.classList.add("blink");
+        this.delimeterIsBlinking = true;
+      } else if (this.state != 'active' && this.delimeterIsBlinking) {
+        this.delimeterBlink.classList.remove("blink");
+        this.delimeterIsBlinking = false;
+      }
+      this.clockValuesAsString = (
+        (this.opts.showDay ? "00" : "") +
+        this.clockStrings.h +
+        this.clockStrings.m +
+        "00"
       ).split("");
     } else {
-      if (this.headerShift) {
-        this.rotorGroups.forEach((el) =>
-          el.classList.remove("autohour")
-        );
+      // Show hours, minutes, seconds
+      if (this.headerShift || this.lastDisplayMode !== 'hms') {
+        this.rotorGroups.forEach((el) => {
+          el.classList.remove("autohour");
+          el.classList.remove("autoday");
+        });
         this.headerShift = false;
+        this.lastDisplayMode = 'hms';
       }
       if (this.delimeterIsBlinking) {
         this.delimeterBlink.classList.remove("blink");
         this.delimeterIsBlinking = false;
       }
       this.clockValuesAsString = (
+        (this.opts.showDay ? "00" : "") +
         this.clockStrings.h +
         this.clockStrings.m +
         this.clockStrings.s
