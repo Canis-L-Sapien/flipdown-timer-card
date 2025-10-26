@@ -41,7 +41,21 @@ console.info(
 
 export function durationToSeconds(duration: string): number {
   const parts = duration.split(":").map(Number);
-  return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 4) {
+    // DD:HH:MM:SS format
+    return parts[0] * 86400 + parts[1] * 3600 + parts[2] * 60 + parts[3];
+  } else {
+    // HH:MM:SS format
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+}
+
+export function secondsToDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  seconds -= hours * 3600;
+  const minutes = Math.floor(seconds / 60);
+  seconds -= minutes * 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 let fdComponent: any = [];
@@ -272,6 +286,7 @@ export class FlipdownTimer extends LitElement {
       this.fd = new FlipDown(timeRemaining, fddiv, {
         show_header: this.config.show_header,
         show_hour: this.config.show_hour,
+        show_day: this.config.show_day,
         bt_location: button_location,
         theme: this.config.theme,
         headings: this.config.localizeHeader,
@@ -302,7 +317,8 @@ export class FlipdownTimer extends LitElement {
   private _handleRotorClick(item: any, param: number, inc: boolean): boolean {
     const state = this.hass.states[this.config.entity!].state;
     if (state !== 'idle') return false;
-    const max = [9, 9, 5, 9, 5, 9];
+    // Max values for each rotor position: DD:HH:MM:SS or HH:MM:SS
+    const max = this.config.show_day ? [9, 9, 2, 9, 5, 9, 5, 9] : [9, 9, 5, 9, 5, 9];
 
     const rotorTarget = item.offsetParent;
 
@@ -343,8 +359,14 @@ export class FlipdownTimer extends LitElement {
     switch (param) {
       case 1:
         let duration = this._getRotorTime();
-        if (state === 'idle' && duration != '00:00:00') {
-          if (this.config.show_hour == 'auto') {
+        if (state === 'idle' && duration != '00:00:00' && duration != '00:00:00:00') {
+          // Convert duration to HH:MM:SS format for Home Assistant
+          if (this.config.show_day) {
+            // Convert DD:HH:MM:SS to total seconds, then back to HH:MM:SS
+            const totalSeconds = durationToSeconds(duration);
+            duration = secondsToDuration(totalSeconds);
+          } else if (this.config.show_hour == 'auto') {
+            // For auto hour mode, strip hours if we're showing minutes:seconds
             duration = duration.substr(3, 5) + ":00";
           }
           this.hass.callService('timer', 'start', {
@@ -376,7 +398,14 @@ export class FlipdownTimer extends LitElement {
     let durationNew = "";
     this.fd.rotorTop.forEach((el, i) => {
       durationNew += el.textContent;
-      if (i == 1 || i == 3) durationNew += ":";
+      // Add colons at appropriate positions
+      if (this.config.show_day) {
+        // DD:HH:MM:SS format - add colons after positions 1, 3, 5
+        if (i == 1 || i == 3 || i == 5) durationNew += ":";
+      } else {
+        // HH:MM:SS format - add colons after positions 1, 3
+        if (i == 1 || i == 3) durationNew += ":";
+      }
     });
     return durationNew;
   }

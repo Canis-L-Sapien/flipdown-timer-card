@@ -84,6 +84,24 @@ export class FlipdownTimerCardEditor extends LitElement implements LovelaceCardE
     return this._config?.show_error || false;
   }
 
+  get _show_header(): boolean {
+    return this._config?.show_header || false;
+  }
+
+  get _show_day(): string {
+    if (this._config?.show_day === undefined) return 'false';
+    if (this._config?.show_day === true) return 'true';
+    if (this._config?.show_day === false) return 'false';
+    return String(this._config?.show_day);
+  }
+
+  get _show_hour(): string {
+    if (this._config?.show_hour === undefined) return 'false';
+    if (this._config?.show_hour === true) return 'true';
+    if (this._config?.show_hour === false) return 'false';
+    return String(this._config?.show_hour);
+  }
+
   get _tap_action(): ActionConfig {
     return this._config?.tap_action || { action: 'more-info' };
   }
@@ -160,6 +178,35 @@ export class FlipdownTimerCardEditor extends LitElement implements LovelaceCardE
                     @change=${this._valueChanged}
                   ></ha-switch>
                 </ha-formfield>
+                <ha-formfield .label=${`Toggle header ${this._show_header ? 'off' : 'on'}`}>
+                  <ha-switch
+                    .checked=${this._show_header !== false}
+                    .configValue=${'show_header'}
+                    @change=${this._valueChanged}
+                  ></ha-switch>
+                </ha-formfield>
+                <paper-dropdown-menu
+                  label="Show Day"
+                  @value-changed=${this._valueChanged}
+                  .configValue=${'show_day'}
+                >
+                  <paper-listbox slot="dropdown-content" .selected=${['false', 'true', 'auto'].indexOf(this._show_day)}>
+                    <paper-item>false</paper-item>
+                    <paper-item>true</paper-item>
+                    <paper-item>auto</paper-item>
+                  </paper-listbox>
+                </paper-dropdown-menu>
+                <paper-dropdown-menu
+                  label="Show Hour"
+                  @value-changed=${this._valueChanged}
+                  .configValue=${'show_hour'}
+                >
+                  <paper-listbox slot="dropdown-content" .selected=${['false', 'true', 'auto'].indexOf(this._show_hour)}>
+                    <paper-item>false</paper-item>
+                    <paper-item>true</paper-item>
+                    <paper-item>auto</paper-item>
+                  </paper-listbox>
+                </paper-dropdown-menu>
                 <ha-formfield .label=${`Toggle error ${this._show_error ? 'off' : 'on'}`}>
                   <ha-switch
                     .checked=${this._show_error !== false}
@@ -216,9 +263,21 @@ export class FlipdownTimerCardEditor extends LitElement implements LovelaceCardE
         delete tmpConfig[target.configValue];
         this._config = tmpConfig;
       } else {
+        let value = target.checked !== undefined ? target.checked : target.value;
+
+        // Convert string values to appropriate types for show_day and show_hour
+        if (target.configValue === 'show_day' || target.configValue === 'show_hour') {
+          if (value === 'true') {
+            value = true;
+          } else if (value === 'false') {
+            value = false;
+          }
+          // Leave 'auto' as a string
+        }
+
         this._config = {
           ...this._config,
-          [target.configValue]: target.checked !== undefined ? target.checked : target.value,
+          [target.configValue]: value,
         };
       }
     }
